@@ -1,0 +1,29 @@
+# .cirrus.yml
+task:
+  name: Debug Windows via RDP
+  windows_container:
+    image: cirrusci/windowsservercore:2019
+
+  env:
+    NGROK_AUTH_TOKEN: ENCRYPTED[4cd5c046b7b268ace39fe5d20372fcbafaa177ce1fd3d7fb71600e813ea82382b3b014d88e092e76d565a8b933ec5db7]
+
+  install_script:
+    - choco install -y ngrok
+    - powershell -Command "net user cirrus Password123! /add"
+    - powershell -Command "net localgroup administrators cirrus /add"
+
+  rdp_script:
+    # Enable RDP
+    - powershell -Command "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0"
+    - powershell -Command "Enable-NetFirewallRule -DisplayGroup 'Remote Desktop'"
+
+    # Start ngrok tunnel for RDP
+    - ngrok authtoken %NGROK_AUTH_TOKEN%
+    - start /B ngrok tcp 3389 --log=stdout > ngrok.log 2>&1
+    - timeout 15
+    - type ngrok.log | findstr "tcp://"
+
+  sleep_script:
+    - echo "VM is ready for debugging. RDP user: cirrus / Password123!"
+    - echo "Ngrok tunnel info printed above."
+    - timeout 7200
