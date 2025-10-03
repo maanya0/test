@@ -1,29 +1,31 @@
-# .cirrus.yml
 task:
-  name: Debug Windows via RDP
-  windows_container:
-    image: cirrusci/windowsservercore:2019
+  name: Debug macOS via VNC
+  macos_instance:
+    image: monterey-base  # or "ventura-base" depending on Cirrus availability
 
   env:
     NGROK_AUTH_TOKEN: ENCRYPTED[4cd5c046b7b268ace39fe5d20372fcbafaa177ce1fd3d7fb71600e813ea82382b3b014d88e092e76d565a8b933ec5db7]
+  setup_script:
+    # Install ngrok
+    - brew install --cask ngrok
 
-  install_script:
-    - choco install -y ngrok
-    - powershell -Command "net user cirrus Password123! /add"
-    - powershell -Command "net localgroup administrators cirrus /add"
+    # Enable screen sharing (VNC)
+    - sudo systemsetup -setremotelogin on
+    - sudo defaults write /Library/Preferences/com.apple.RemoteManagement VNCAlwaysStartOnConsole -bool true
+    - sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+        -activate -configure -access -on \
+        -clientopts -setvnclegacy -vnclegacy yes \
+        -clientopts -setvncpw -vncpw "cirrusdebug" \
+        -restart -agent -privs -all
 
-  rdp_script:
-    # Enable RDP
-    - powershell -Command "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0"
-    - powershell -Command "Enable-NetFirewallRule -DisplayGroup 'Remote Desktop'"
-
-    # Start ngrok tunnel for RDP
-    - ngrok authtoken %NGROK_AUTH_TOKEN%
-    - start /B ngrok tcp 3389 --log=stdout > ngrok.log 2>&1
-    - timeout 15
-    - type ngrok.log | findstr "tcp://"
+  tunnel_script:
+    # Start ngrok tunnel for VNC
+    - ngrok config add-authtoken $NGROK_AUTH_TOKEN
+    - nohup ngrok tcp 5900 --log=stdout > ngrok.log 2>&1 &
+    - sleep 10
+    - grep -o "tcp://[0-9a-zA-Z.:]*" ngrok.log || true
 
   sleep_script:
-    - echo "VM is ready for debugging. RDP user: cirrus / Password123!"
-    - echo "Ngrok tunnel info printed above."
-    - timeout 7200
+    - echo "VNC password: cirrusdebug"
+    - echo "Use the ngrok tcp:// address above in your VNC client."
+    - sleep 7200
