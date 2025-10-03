@@ -1,0 +1,42 @@
+name: Debug Windows via RDP
+
+on:
+  workflow_dispatch:  # Run manually
+
+jobs:
+  debug:
+    runs-on: warp-windows-latest-x64-2x
+
+    env:
+      NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+
+    steps:
+      - name: Install ngrok
+        run: choco install -y ngrok
+
+      - name: Create debug user
+        run: |
+          powershell -Command "$pw = ConvertTo-SecureString 'Password123!' -AsPlainText -Force; New-LocalUser 'ghdebug' -Password $pw -FullName 'GitHub Debug User' -Description 'Debug account'"
+          powershell -Command "Add-LocalGroupMember -Group administrators -Member ghdebug"
+
+      - name: Enable RDP
+        run: |
+          powershell -Command "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0"
+          powershell -Command "Enable-NetFirewallRule -DisplayGroup 'Remote Desktop'"
+
+      - name: Start ngrok tunnel
+        run: |
+          ngrok config add-authtoken $env:NGROK_AUTH_TOKEN
+          start /B ngrok tcp 3389 --log=stdout > ngrok.log 2>&1
+          timeout 15
+          type ngrok.log | findstr "tcp://"
+
+      - name: Sleep for 2 hours
+        run: |
+          echo "==================================================="
+          echo "RDP Credentials:"
+          echo "   User: ghdebug"
+          echo "   Pass: Password123!"
+          echo "Connect to the ngrok tcp:// address shown above."
+          echo "==================================================="
+          timeout 7200
